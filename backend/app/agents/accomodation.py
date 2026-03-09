@@ -184,7 +184,7 @@ class AccommodationAgent:
             attractions_json=json.dumps(attractions, indent=2, default=str),
         )
 
-        nova_response = await self.bedrock_client.invoke(
+        bedrock_response = await self.bedrock_client.invoke(
             prompt=prompt,
             system=(
                 "You are VoyageMind's Accommodation Agent. "
@@ -192,6 +192,9 @@ class AccommodationAgent:
                 "Return structured JSON only."
             ),
         )
+        nova_response = self.bedrock_client.extract_text_from_response(bedrock_response)
+        if not nova_response:
+            nova_response = json.dumps({"recommendations": top_hotels[:3]}, default=str)
 
         reasoning_steps.append({
             "step": "action",
@@ -283,7 +286,9 @@ class AccommodationAgent:
             )
             return [
                 HotelOption(
+                    id=h.get("id", f"hotel-{index}"),
                     name=h.get("name", "Unknown"),
+                    location=h.get("location", h.get("city", "Unknown")),
                     price_per_night=h.get("price_per_night", 0),
                     rating=h.get("rating", 0),
                     distance_to_center_km=h.get(
@@ -294,13 +299,15 @@ class AccommodationAgent:
                     amenities=h.get("amenities", []),
                     reason=h.get("reason", ""),
                 )
-                for h in recommendations[:3]
+                for index, h in enumerate(recommendations[:3], start=1)
             ]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             logger.warning("Failed to parse Nova response, using scored fallback: %s", exc)
             return [
                 HotelOption(
+                    id=h.get("id", f"hotel-{index}"),
                     name=h["name"],
+                    location=h.get("location", h.get("city", "Unknown")),
                     price_per_night=h["price_per_night"],
                     rating=h.get("rating", 0),
                     distance_to_center_km=h.get("avg_distance_km", 0),
@@ -309,5 +316,5 @@ class AccommodationAgent:
                     amenities=h.get("amenities", []),
                     reason=f"Score: {h.get('score', 0):.2f}",
                 )
-                for h in fallback_hotels[:3]
+                for index, h in enumerate(fallback_hotels[:3], start=1)
             ]

@@ -4,11 +4,11 @@ VoyageMind Data Models and Schemas
 Defines Pydantic models for API requests/responses and database entities.
 """
 
-from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from datetime import date, datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, EmailStr, validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 # ==================== Enums ====================
@@ -68,7 +68,7 @@ class User(UserBase):
 class TripInput(BaseModel):
     """Main trip planning input request"""
     
-    destination: str = Field(..., description="Travel destination (city or country)")
+    destination: str = Field(..., min_length=2, description="Travel destination (city or country)")
     start_date: date = Field(..., description="Trip start date")
     end_date: date = Field(..., description="Trip end date")
     budget_usd: float = Field(..., gt=0, description="Total budget in USD")
@@ -78,13 +78,12 @@ class TripInput(BaseModel):
     special_requirements: Optional[str] = Field(default=None, max_length=500)
     user_id: Optional[str] = None
     
-    @validator("end_date")
-    def validate_dates(cls, v, values):
-        """Ensure end_date is after start_date"""
-        start = values.get("start_date")
-        if start and v <= start:
+    @model_validator(mode="after")
+    def validate_dates(self):
+        """Ensure end_date is after start_date."""
+        if self.end_date <= self.start_date:
             raise ValueError("end_date must be after start_date")
-        return v
+        return self
 
     class Config:
         json_schema_extra = {
@@ -140,9 +139,38 @@ class HotelOption(BaseModel):
     distance_to_center_km: Optional[float] = None
     image_url: Optional[str] = None
     booking_url: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    reason: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class AccommodationRequest(BaseModel):
+    """Accommodation-only planning request."""
+
+    destination: str = Field(..., min_length=2)
+    check_in: date
+    check_out: date
+    budget: float = Field(..., gt=0)
+    travelers: int = Field(default=1, ge=1, le=20)
+    latitude: float = 0.0
+    longitude: float = 0.0
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.check_out <= self.check_in:
+            raise ValueError("check_out must be after check_in")
+        return self
+
+
+class AccommodationResult(BaseModel):
+    """Accommodation agent result payload."""
+
+    hotels: List[HotelOption] = Field(default_factory=list)
+    reasoning: str
+    reasoning_steps: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ==================== Weather Data ====================

@@ -1,14 +1,10 @@
-"""
-VoyageMind Bedrock Client Module
+"""AWS Bedrock client with a mock-safe local fallback."""
 
-Handles AWS Bedrock integration for invoking Nova models.
-Supports streaming and non-streaming responses.
-"""
-
+import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional, List
 from datetime import datetime
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -32,23 +28,40 @@ class BedrockClient:
 
     def __init__(self):
         """Initialize Bedrock client with AWS credentials"""
-        self.region = settings.aws.bedrock_region
-        self.model_id = settings.aws.bedrock_model_id
-        
-        # Initialize boto3 client
-        self.client = boto3.client(
-            "bedrock-runtime",
-            region_name=self.region,
-            aws_access_key_id=settings.aws.access_key_id,
-            aws_secret_access_key=settings.aws.secret_access_key,
-        )
-        
-        logger.info(f"Initialized Bedrock client with model: {self.model_id} in region: {self.region}")
+        self.region = settings.aws_region
+        self.model_id = settings.bedrock_model_id
+        self.mock_mode = settings.mock_mode
+        self.client = None
 
-    def invoke(
+        if self.mock_mode:
+            logger.info("Bedrock client is running in mock mode")
+            return
+
+        client_kwargs = {
+            "service_name": "bedrock-runtime",
+            "region_name": self.region,
+        }
+        if settings.aws_access_key_id:
+            client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+        if settings.aws_secret_access_key:
+            client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+
+        try:
+            self.client = boto3.client(**client_kwargs)
+            logger.info(
+                "Initialized Bedrock client with model %s in region %s",
+                self.model_id,
+                self.region,
+            )
+        except Exception as exc:  # pragma: no cover - defensive boto bootstrap
+            logger.warning("Falling back to mock Bedrock client: %s", exc)
+            self.client = None
+
+    async def invoke(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
+        system: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
@@ -72,11 +85,16 @@ class BedrockClient:
             ClientError: If Bedrock API call fails
         """
         
+        effective_system_prompt = system_prompt or system
+
+        if self.client is None:
+            return self._mock_response(prompt, effective_system_prompt)
+
         messages = []
         
         # Add system prompt if provided
-        if system_prompt:
-            logger.debug(f"Using system prompt: {system_prompt[:100]}...")
+        if effective_system_prompt:
+            logger.debug("Using system prompt: %s...", effective_system_prompt[:100])
         
         # Prepare user message
         messages.append({
@@ -88,7 +106,7 @@ class BedrockClient:
         body = {
             "anthropic_version": "bedrock-2024-04-04",
             "max_tokens": max_tokens,
-            "system": system_prompt or "",
+            "system": effective_system_prompt or "",
             "messages": messages,
             "temperature": temperature,
             "top_p": top_p,
@@ -100,8 +118,9 @@ class BedrockClient:
             logger.debug(f"Including {len(tools)} tools in request")
         
         try:
-            logger.debug(f"Invoking {self.model_id}...")
-            response = self.client.invoke_model(
+            logger.debug("Invoking %s...", self.model_id)
+            response = await asyncio.to_thread(
+                self.client.invoke_model,
                 modelId=self.model_id,
                 body=json.dumps(body),
             )
@@ -123,6 +142,7 @@ class BedrockClient:
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
+        system: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
@@ -149,6 +169,15 @@ class BedrockClient:
             ClientError: If Bedrock API call fails
         """
         
+        effective_system_prompt = system_prompt or system
+
+        if self.client is None:
+            yield {
+                "type": "content_block_delta",
+                "delta": {"text": self.extract_text_from_response(self._mock_response(prompt, effective_system_prompt))},
+            }
+            return
+
         messages = [{
             "role": "user",
             "content": prompt
@@ -158,7 +187,7 @@ class BedrockClient:
         body = {
             "anthropic_version": "bedrock-2024-04-04",
             "max_tokens": max_tokens,
-            "system": system_prompt or "",
+            "system": effective_system_prompt or "",
             "messages": messages,
             "temperature": temperature,
             "top_p": top_p,
@@ -168,8 +197,9 @@ class BedrockClient:
             body["tools"] = tools
         
         try:
-            logger.debug(f"Invoking {self.model_id} with streaming...")
-            response = self.client.invoke_model_with_response_stream(
+            logger.debug("Invoking %s with streaming...", self.model_id)
+            response = await asyncio.to_thread(
+                self.client.invoke_model_with_response_stream,
                 modelId=self.model_id,
                 body=json.dumps(body),
             )
@@ -246,6 +276,27 @@ class BedrockClient:
             "model_id": self.model_id,
             "region": self.region,
             "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    def _mock_response(self, prompt: str, system_prompt: Optional[str]) -> Dict[str, Any]:
+        """Return a deterministic response when Bedrock is unavailable."""
+        summary = (
+            "Mock mode is enabled, so VoyageMind is using backend heuristics instead of "
+            "a live Bedrock completion."
+        )
+        if system_prompt:
+            summary = f"{summary} Requested system: {system_prompt[:80]}"
+
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": summary,
+                }
+            ],
+            "mock": True,
+            "prompt_preview": prompt[:120],
+            "stop_reason": "end_turn",
         }
 
 

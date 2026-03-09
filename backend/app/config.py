@@ -1,8 +1,9 @@
 """VoyageMind application configuration."""
 
-import os
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -18,9 +19,13 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
     cache_ttl_seconds: int = 3600
+    redis_max_connections: int = 10
 
     # Database
-    database_url: str = "postgresql://localhost:5432/voyagemind"
+    database_url: str = "sqlite:///./voyagemind.db"
+    database_echo: bool = False
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
 
     # API Keys (external services)
     amadeus_api_key: str = ""
@@ -32,8 +37,13 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     mock_mode: bool = True  # Use mock data when True
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache()

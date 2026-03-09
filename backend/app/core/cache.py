@@ -31,13 +31,13 @@ class CacheManager:
     def __init__(self):
         """Initialize Redis connection"""
         try:
-            self.redis_url = settings.redis.url
-            self.ttl = settings.redis.ttl
+            self.redis_url = settings.redis_url
+            self.ttl = settings.cache_ttl_seconds
             
             # Parse Redis URL and create connection
             self.client = redis.from_url(
                 self.redis_url,
-                max_connections=settings.redis.max_connections,
+                max_connections=settings.redis_max_connections,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_keepalive=True,
@@ -315,3 +315,13 @@ def get_cache_manager() -> CacheManager:
     if _cache_manager is None:
         _cache_manager = CacheManager()
     return _cache_manager
+
+
+async def get_cached_result(key: str) -> Optional[Any]:
+    """Async wrapper for cache reads used by agents."""
+    return get_cache_manager().get(key)
+
+
+async def cache_result(key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    """Async wrapper for cache writes used by agents."""
+    return get_cache_manager().set(key, value, ttl=ttl)

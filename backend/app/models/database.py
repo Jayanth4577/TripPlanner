@@ -1,30 +1,25 @@
-"""
-VoyageMind Database Models and Configuration
-
-Defines SQLAlchemy ORM models for persistent storage.
-"""
+"""VoyageMind database models and SQLAlchemy configuration."""
 
 from datetime import datetime
-from typing import Optional
-
 from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Boolean, JSON, Enum, ForeignKey, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 import enum
 
 from app.config import get_settings
 
 # Database configuration
 settings = get_settings()
-DATABASE_URL = settings.database.url
+DATABASE_URL = settings.database_url
 
-engine = create_engine(
-    DATABASE_URL,
-    echo=settings.database.echo,
-    pool_size=settings.database.pool_size,
-    max_overflow=settings.database.max_overflow,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
+engine_kwargs = {"echo": settings.database_echo}
+if "sqlite" in DATABASE_URL:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    engine_kwargs["pool_size"] = settings.database_pool_size
+    engine_kwargs["max_overflow"] = settings.database_max_overflow
+    engine_kwargs["pool_pre_ping"] = True
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

@@ -326,3 +326,24 @@ class ErrorMessages:
     DESTINATION_UNAVAILABLE = "Destination is not currently available for planning"
     WEATHER_WARNING = "Severe weather warning for destination during travel dates"
     NO_SOLUTION = "Unable to create a feasible itinerary with current constraints"
+
+
+ACCOMMODATION_PROMPT = dedent("""
+    Evaluate hotel options for a trip to {destination}.
+
+    Dates: {check_in} to {check_out}
+    Nights: {nights}
+    Travelers: {travelers}
+    Rooms needed: {rooms}
+    Budget per room per night: ${budget_per_night:.2f}
+
+    Candidate hotels:
+    {hotels_json}
+
+    Nearby attractions:
+    {attractions_json}
+
+    Return JSON with a `recommendations` array containing the top hotel choices.
+    Each recommendation should include name, price_per_night, rating, amenities,
+    avg_distance_km, latitude, longitude, and a short reason.
+""").strip()

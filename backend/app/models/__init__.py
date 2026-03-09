@@ -24,6 +24,8 @@ from app.models.database import (
 )
 
 from app.models.schemas import (
+    AccommodationRequest,
+    AccommodationResult,
     UserBase,
     UserCreate,
     User as UserSchema,
@@ -62,6 +64,8 @@ __all__ = [
     "drop_tables",
     "reset_database",
     # Schemas
+    "AccommodationRequest",
+    "AccommodationResult",
     "UserBase",
     "UserCreate",
     "UserSchema",
